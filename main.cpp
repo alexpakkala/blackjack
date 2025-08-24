@@ -14,7 +14,7 @@ const int NUM_DECKS = 6;
 const int STARTING_MONEY = 1000;
 const vector<string> VALID_MOVES = {"hit", "stand", "split", "double",
                                     "h",   "st",    "sp",    "d"};
-
+bool isValidMove(std::string &text);
 void convertToLower(string &s) {
   for (auto &c : s)
     c = std::tolower((unsigned char)c);
@@ -41,7 +41,7 @@ enum Rank {
 
 enum Suit { Clubs, Spades, Hearts, Diamonds };
 
-enum Move { Hit, Stand, Double };
+enum Move { Hit, Stand, Double, Split };
 
 std::ostream &operator<<(std::ostream &os, Suit s) {
   static const char *names[] = {"Clubs", "Diamonds", "Hearts", "Spades"};
@@ -68,7 +68,9 @@ struct Card {
   Card() : rank(Ace), suit(Hearts) {}
   void printCard() { cout << rank << " of " << suit; }
 
-  bool isFaceCard() { return rank == Jack || rank == Queen || rank == King; }
+  bool isFaceCard() {
+    return rank == Ten || rank == Jack || rank == Queen || rank == King;
+  }
 };
 
 class Shoot {
@@ -107,6 +109,8 @@ public:
     cards = {};
   }
 
+  Hand(const vector<Card> &cardsIn) : sum(0), cards(cardsIn) { sumUpHand(); }
+
   Hand(vector<Card> &cards) {
     for (auto c : cards) {
       this->cards.push_back(c);
@@ -126,6 +130,18 @@ public:
       } else {
         sum += static_cast<int>(c.rank) + 2;
       }
+    }
+  }
+
+  bool isA_BlackJack() {
+    return cards.size() == 2 &&
+               (cards[0].rank == Ace && cards[1].isFaceCard()) ||
+           (cards[1].rank == Ace && cards[1].isFaceCard());
+  }
+
+  void printHand() {
+    for (auto c : cards) {
+      c.printCard();
     }
   }
 };
@@ -165,6 +181,40 @@ public:
 
   Player(int dollars) { money = dollars; }
 
+  Move promptUserForValidMove(Hand &hand) {
+    string text = "";
+    cout << "Your total is " << hand.sum << endl;
+    cout << "Enter a move (Hit, Stand, Double, Split)";
+    cin >> text;
+
+    if (!isValidMove(text)) {
+      return promptUserForValidMove(hand);
+    }
+    if (text == "double" || text == "d") {
+      return Double;
+    }
+    if (text == "hit" || text == "h") {
+      return Hit;
+    }
+    if (text == "split" || text == "sp") {
+      return Split;
+    }
+    return Stand;
+  }
+
+  void handleSplit(Hand &hand, Shoot &shoot) {
+    if (hand.cards[0].rank != hand.cards[1].rank || hand.cards.size() != 2) {
+      cout << "error: tried to split a noneligible hand" << endl;
+      return;
+    }
+    hands.push_back(Hand({hand.cards[1]}));
+    hand.cards[1] = shoot.deal();
+    cout << "new left hand is: ";
+    hand.printHand();
+
+    hands[hands.size() - 1].addCard(shoot.deal());
+  }
+
   int strength() { return hands[0].sum; }
 
   void muck() { hands = {}; }
@@ -192,7 +242,10 @@ public:
     return 0;
   }
 
-  void addCardToHand(Card card) { hand.addCard(card); }
+  void addCardToHand(Card card) {
+    hand.addCard(card);
+    hand.sumUpHand();
+  }
 };
 
 bool isValidMove(string &text) {
@@ -201,9 +254,8 @@ bool isValidMove(string &text) {
          VALID_MOVES.end();
 }
 
-void processMove(Player &player, string &text, Hand *hand, Shoot &shoot,
-                 int bet) {
-  if (text == "hit" || text == "h") {
+void processMove(Player &player, Move move, Hand *hand, Shoot &shoot) {
+  if (move == Hit) {
     cout << "player hits, the ";
     Card card = shoot.deal();
     card.printCard();
@@ -215,21 +267,27 @@ void processMove(Player &player, string &text, Hand *hand, Shoot &shoot,
     }
     return;
   }
-  if (text == "stand" || text == "st") {
+  if (move == Stand) {
     cout << "Player stands" << endl;
     hand->done = true;
     return;
   }
-  if (text == "double" || text == "d") {
-    cout << "Player doubles for another $" << bet << endl;
+  if (move == Double) {
+    cout << "Player doubles for another $" << hand->bet << endl;
     Card card = shoot.deal();
     card.printCard();
+    cout << " is dealt" << endl;
     hand->addCard(card);
     hand->sumUpHand();
-    if (hand->sum >= 21) {
-      hand->done = true;
+    hand->bet = hand->bet << 1;
+    if (hand->sum > 21) {
+      cout << "Player busted! (total: " << hand->sum << ")\n";
     }
+    hand->done = true;
     return;
+  }
+  if (move == Split) {
+    player.handleSplit(*hand, shoot);
   }
   // TODO: add split logic
 }
@@ -238,8 +296,16 @@ void playDealer(Dealer &dealer, Shoot &shoot) {
   cout << "Dealer turns over ";
   dealer.hand.cards[1].printCard();
   while (dealer.hand.sum < 17) {
-    dealer.addCardToHand(shoot.deal());
+    Card card = shoot.deal();
+    cout << "\nDealer hits for a ";
+    card.printCard();
+    cout << endl;
+    dealer.addCardToHand(card);
   }
+  if (dealer.hand.sum > 21) {
+    cout << "Dealer busted!\n";
+  }
+  cout << endl;
 }
 
 int returnGainFromHand(Hand &playerHand, Hand &dealerHand) {
@@ -275,25 +341,25 @@ void playHand(Player &player, Dealer &dealer, Shoot &shoot) {
   int bet = 0;
   cin >> bet;
   cout << "Player bet $" << bet << endl;
-
   player.initialDeal(shoot);
+  player.hands[0].bet = bet;
   cout << "Player has ";
   player.printHand(0);
-
+  if (player.hands[0].isA_BlackJack()) {
+    cout << "Blackjack!" << endl;
+    player.money += bet * 1.5;
+    cout << "Player wins " << bet * 1.5 << endl;
+  }
   dealer.initialDeal(shoot);
+
   cout << "Dealer has ";
   dealer.printFirstCard();
   Hand *hand = &player.hands[0];
 
   string text = "";
   while (!player.allHandsDone()) {
-    cout << "Enter a move (Hit, Stand, Double, Split)";
-    cin >> text;
-
-    if (!isValidMove(text)) {
-      continue;
-    }
-    processMove(player, text, &player.hands[0], shoot, bet);
+    Move move = player.promptUserForValidMove(*hand);
+    processMove(player, move, &player.hands[0], shoot);
   }
   playDealer(dealer, shoot);
   evaluateHands(player, dealer);
