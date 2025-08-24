@@ -3,6 +3,7 @@
 #include <iostream>
 #include <iterator>
 #include <stack>
+#include <stdatomic.h>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -11,6 +12,13 @@ using namespace std;
 
 const int NUM_DECKS = 6;
 const int STARTING_MONEY = 1000;
+const vector<string> VALID_MOVES = {"hit", "stand", "split", "double",
+                                    "h",   "st",    "sp",    "d"};
+
+void convertToLower(string &s) {
+  for (auto &c : s)
+    c = std::tolower((unsigned char)c);
+}
 
 int getRank(int card) { return card % 13; }
 
@@ -99,6 +107,15 @@ public:
   }
 
   Hand(vector<Card> &cards) {
+    for (auto c : cards) {
+      this->cards.push_back(c);
+    }
+    sumUpHand();
+  }
+
+  void addCard(Card card) { cards.push_back(card); }
+
+  void sumUpHand() {
     sum = 0;
     for (auto c : cards) {
       this->cards.push_back(c);
@@ -168,6 +185,45 @@ public:
   }
 };
 
+bool isValidMove(string &text) {
+  convertToLower(text);
+  return find(VALID_MOVES.begin(), VALID_MOVES.end(), text) !=
+         VALID_MOVES.end();
+}
+
+void processMove(Player &player, string &text, Hand *hand, Shoot &shoot,
+                 int bet) {
+  if (text == "hit" || text == "h") {
+    cout << "player hits, the ";
+    Card card = shoot.deal();
+    card.printCard();
+    cout << " is dealt. " << endl;
+    hand->addCard(card);
+    hand->sumUpHand();
+    if (hand->sum >= 21) {
+      hand->done = true;
+    }
+    return;
+  }
+  if (text == "stand" || text == "st") {
+    cout << "Player stands" << endl;
+    hand->done = true;
+    return;
+  }
+  if (text == "double" || text == "d") {
+    cout << "Player doubles for another $" << bet << endl;
+    Card card = shoot.deal();
+    card.printCard();
+    hand->addCard(card);
+    hand->sumUpHand();
+    if (hand->sum >= 21) {
+      hand->done = true;
+    }
+    return;
+  }
+  // TODO: add split logic
+}
+
 void playHand(Player &player, Dealer &dealer, Shoot &shoot) {
   cout << "Current stack: $" << player.money << endl;
   cout << "Enter Bet size: ";
@@ -185,8 +241,13 @@ void playHand(Player &player, Dealer &dealer, Shoot &shoot) {
 
   while (true) {
     string text = "";
-    cout << "Enter move (Hit, Stand, Double)";
+    cout << "Enter move (Hit, Stand, Double, Split)";
     cin >> text;
+    while (!isValidMove(text)) {
+      cout << "Enter a valid move (Hit, Stand, Double)";
+      cin >> text;
+      processMove(player, text, &player.hands[0], shoot, bet);
+    }
     break;
   }
 
@@ -195,8 +256,8 @@ void playHand(Player &player, Dealer &dealer, Shoot &shoot) {
 
 int main() {
   srand(time(0));
-  Shoot shoot(NUM_DECKS);
   Player player(STARTING_MONEY);
+  Shoot shoot(NUM_DECKS);
   Dealer dealer;
   while (true) {
     playHand(player, dealer, shoot);
