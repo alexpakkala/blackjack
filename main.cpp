@@ -101,6 +101,7 @@ public:
   int sum;
   vector<Card> cards;
   bool done = false;
+  int bet = 0;
   Hand() {
     sum = 0;
     cards = {};
@@ -118,7 +119,6 @@ public:
   void sumUpHand() {
     sum = 0;
     for (auto c : cards) {
-      this->cards.push_back(c);
       if (c.isFaceCard()) {
         sum += 10;
       } else if (c.rank == Ace) {
@@ -134,32 +134,40 @@ class Player {
 public:
   vector<Hand> hands;
   int money;
+
   void initialDeal(Shoot &shoot) {
     vector<Card> cards;
-    cards.resize(2);
-    cards[0] = shoot.deal();
-    cards[1] = shoot.deal();
-    hands.push_back(cards);
+    cards.push_back(shoot.deal());
+    cards.push_back(shoot.deal());
+    hands.push_back(Hand(cards));
   }
 
   void printHand(int idx) {
     int i = 0;
     for (Card c : hands[idx].cards) {
-      if (i > 0) {
+      c.printCard();
+      if (i == 0) {
         cout << " and ";
       }
-      c.printCard();
-
       i++;
     }
     cout << endl;
+  }
+
+  bool allHandsDone() {
+    for (auto h : hands) {
+      if (!h.done) {
+        return false;
+      }
+    }
+    return true;
   }
 
   Player(int dollars) { money = dollars; }
 
   int strength() { return hands[0].sum; }
 
-  void muck() { hands.resize(0); }
+  void muck() { hands = {}; }
 };
 
 class Dealer {
@@ -183,6 +191,8 @@ public:
     cout << endl;
     return 0;
   }
+
+  void addCardToHand(Card card) { hand.addCard(card); }
 };
 
 bool isValidMove(string &text) {
@@ -224,6 +234,41 @@ void processMove(Player &player, string &text, Hand *hand, Shoot &shoot,
   // TODO: add split logic
 }
 
+void playDealer(Dealer &dealer, Shoot &shoot) {
+  cout << "Dealer turns over ";
+  dealer.hand.cards[1].printCard();
+  while (dealer.hand.sum < 17) {
+    dealer.addCardToHand(shoot.deal());
+  }
+}
+
+int returnGainFromHand(Hand &playerHand, Hand &dealerHand) {
+  if (dealerHand.sum > 21) {
+    return playerHand.bet;
+  }
+  if (playerHand.sum > dealerHand.sum && playerHand.sum <= 21) {
+    return playerHand.bet;
+  }
+  if (playerHand.sum == dealerHand.sum) {
+    return 0;
+  }
+  return -1 * playerHand.bet;
+}
+
+void evaluateHands(Player &player, Dealer &dealer) {
+  for (auto hand : player.hands) {
+    int gain = returnGainFromHand(hand, dealer.hand);
+    if (gain == 0) {
+      cout << "It's a push" << endl;
+    } else if (gain > 1) {
+      cout << "Player wins $" << gain << endl;
+    } else {
+      cout << "Player loses $" << gain << endl;
+    }
+    player.money += gain;
+  }
+}
+
 void playHand(Player &player, Dealer &dealer, Shoot &shoot) {
   cout << "Current stack: $" << player.money << endl;
   cout << "Enter Bet size: ";
@@ -238,18 +283,20 @@ void playHand(Player &player, Dealer &dealer, Shoot &shoot) {
   dealer.initialDeal(shoot);
   cout << "Dealer has ";
   dealer.printFirstCard();
+  Hand *hand = &player.hands[0];
 
-  while (true) {
-    string text = "";
-    cout << "Enter move (Hit, Stand, Double, Split)";
+  string text = "";
+  while (!player.allHandsDone()) {
+    cout << "Enter a move (Hit, Stand, Double, Split)";
     cin >> text;
-    while (!isValidMove(text)) {
-      cout << "Enter a valid move (Hit, Stand, Double)";
-      cin >> text;
-      processMove(player, text, &player.hands[0], shoot, bet);
+
+    if (!isValidMove(text)) {
+      continue;
     }
-    break;
+    processMove(player, text, &player.hands[0], shoot, bet);
   }
+  playDealer(dealer, shoot);
+  evaluateHands(player, dealer);
 
   player.muck();
 }
