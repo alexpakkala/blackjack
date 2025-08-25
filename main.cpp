@@ -118,7 +118,10 @@ public:
     sumUpHand();
   }
 
-  void addCard(Card card) { cards.push_back(card); }
+  void addCard(Card card) {
+    cards.push_back(card);
+    sumUpHand();
+  }
 
   void sumUpHand() {
     sum = 0;
@@ -184,19 +187,36 @@ public:
   Move promptUserForValidMove(Hand &hand) {
     string text = "";
     cout << "Your total is " << hand.sum << endl;
-    cout << "Enter a move (Hit, Stand, Double, Split)";
+
+    cout << "Enter a move (Hit, Stand";
+    if (money >= hand.bet) {
+      cout << ", Double";
+    }
+    if (hand.cards.size() == 2 && hand.cards[0].rank == hand.cards[1].rank) {
+      cout << ", Split";
+    }
+    cout << "):";
     cin >> text;
 
     if (!isValidMove(text)) {
       return promptUserForValidMove(hand);
     }
     if (text == "double" || text == "d") {
+      if (money < hand.bet) {
+        cout << "Not enough money to double." << endl;
+        return promptUserForValidMove(hand);
+      }
       return Double;
     }
     if (text == "hit" || text == "h") {
       return Hit;
     }
     if (text == "split" || text == "sp") {
+      if (hand.cards.size() != 2 || hand.cards[0].rank != hand.cards[1].rank) {
+        cout << "Cannot split on this hand" << endl;
+        return promptUserForValidMove(hand);
+      }
+
       return Split;
     }
     return Stand;
@@ -213,6 +233,15 @@ public:
     hand.printHand();
 
     hands[hands.size() - 1].addCard(shoot.deal());
+  }
+
+  bool allHandsBusted() {
+    for (Hand h : hands) {
+      if (h.sum <= 21) {
+        return false;
+      }
+    }
+    return true;
   }
 
   int strength() { return hands[0].sum; }
@@ -261,9 +290,9 @@ void processMove(Player &player, Move move, Hand *hand, Shoot &shoot) {
     card.printCard();
     cout << " is dealt. " << endl;
     hand->addCard(card);
-    hand->sumUpHand();
     if (hand->sum >= 21) {
       hand->done = true;
+      cout << "Player busts!" << endl;
     }
     return;
   }
@@ -309,12 +338,13 @@ void playDealer(Dealer &dealer, Shoot &shoot) {
 }
 
 int returnGainFromHand(Hand &playerHand, Hand &dealerHand) {
-  if (dealerHand.sum > 21) {
-    return playerHand.bet;
-  }
   if (playerHand.sum > dealerHand.sum && playerHand.sum <= 21) {
     return playerHand.bet;
   }
+  if (dealerHand.sum > 21) {
+    return playerHand.bet;
+  }
+
   if (playerHand.sum == dealerHand.sum) {
     return 0;
   }
@@ -329,17 +359,26 @@ void evaluateHands(Player &player, Dealer &dealer) {
     } else if (gain > 1) {
       cout << "Player wins $" << gain << endl;
     } else {
-      cout << "Player loses $" << gain << endl;
+      cout << "Player loses $" << -1 * gain << endl;
     }
     player.money += gain;
   }
 }
 
 void playHand(Player &player, Dealer &dealer, Shoot &shoot) {
+  if (player.money <= 0) {
+    cout << "All out of money" << endl;
+    return;
+  }
   cout << "Current stack: $" << player.money << endl;
   cout << "Enter Bet size: ";
   int bet = 0;
   cin >> bet;
+  while (int(bet) > player.money) {
+    cout << "\nNot enough money for that bet" << endl;
+    cin >> bet;
+    cout << "Enter Bet size: ";
+  }
   cout << "Player bet $" << bet << endl;
   player.initialDeal(shoot);
   player.hands[0].bet = bet;
@@ -347,8 +386,8 @@ void playHand(Player &player, Dealer &dealer, Shoot &shoot) {
   player.printHand(0);
   if (player.hands[0].isA_BlackJack()) {
     cout << "Blackjack!" << endl;
-    player.money += bet * 1.5;
-    cout << "Player wins " << bet * 1.5 << endl;
+    player.money += int(bet * 1.5);
+    cout << "Player wins " << int(bet * 1.5) << endl;
   }
   dealer.initialDeal(shoot);
 
@@ -361,7 +400,9 @@ void playHand(Player &player, Dealer &dealer, Shoot &shoot) {
     Move move = player.promptUserForValidMove(*hand);
     processMove(player, move, &player.hands[0], shoot);
   }
-  playDealer(dealer, shoot);
+  if (!player.allHandsBusted()) {
+    playDealer(dealer, shoot);
+  }
   evaluateHands(player, dealer);
 
   player.muck();
@@ -372,8 +413,9 @@ int main() {
   Player player(STARTING_MONEY);
   Shoot shoot(NUM_DECKS);
   Dealer dealer;
-  while (true) {
+  while (player.money > 0) {
     playHand(player, dealer, shoot);
   }
+  cout << "All out of money" << endl;
   return 0;
 }
